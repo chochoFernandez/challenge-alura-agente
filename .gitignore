@@ -1,0 +1,21 @@
+# Credenciales — nunca al repo
+.env
+
+# Índice vectorial: se reconstruye con scripts/build_index.py
+data/index/
+
+# Logs de ejecución reales (se versiona solo el sample)
+logs/*.jsonl
+!logs/executions.sample.jsonl
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# SO / editor
+.DS_Store
+.vscode/

@@ -1,0 +1,23 @@
+# La API key jamás entra a la imagen: se pasa en runtime con -e o --env-file.
+.env
+
+# El índice se construye en el contenedor (o se monta como volumen).
+data/index/
+
+# Logs reales del host
+logs/*.jsonl
+
+# Entorno local y basura de desarrollo
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.git/
+.gitignore
+
+# No hacen falta dentro de la imagen
+tests/
+docs/
+README.md
+CLAUDE.md

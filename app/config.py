@@ -34,7 +34,11 @@ class Settings(BaseSettings):
     )
 
     # --- Modelos ---
-    gemini_model: str = "gemini-2.5-flash"
+    # gemini-2.5-flash y anteriores ya no se habilitan para keys nuevas (la API responde 404
+    # "no longer available to new users"), así que no sirven como default.
+    # gemini-3.1-flash-lite es estable (no preview) y alcanza de sobra: con temperature=0 y
+    # el contexto ya recuperado, la tarea es leer y citar, no razonar de cero.
+    gemini_model: str = "gemini-3.1-flash-lite"
     embedding_model: str = "gemini-embedding-001"
 
     # gemini-embedding-001 devuelve 3072 dimensiones por defecto. Truncamos a 768 para
@@ -48,8 +52,15 @@ class Settings(BaseSettings):
 
     # Umbral de similitud coseno. Si ningún fragmento lo supera, el agente responde
     # "no encontré esta información" en vez de arriesgar una respuesta inventada.
-    # Se calibra empíricamente con scripts/eval_questions.py.
-    similarity_threshold: float = 0.55
+    #
+    # Calibrado con scripts/eval_questions.py, no elegido a ojo: la peor pregunta CON
+    # respuesta puntúa 0.675 y la mejor pregunta SIN respuesta 0.641. 0.66 cae en el medio.
+    #
+    # El margen es de apenas 0.034: los embeddings de Gemini comprimen todo el texto en
+    # español en una banda alta y estrecha, así que dos textos sin nada que ver rara vez
+    # bajan de 0.6. Por eso este umbral no alcanza como única defensa y el prompt del agente
+    # tiene que hacer su parte (ver app/agent.py).
+    similarity_threshold: float = 0.66
 
     # --- Rutas (relativas a la raíz del proyecto) ---
     docs_dir: Path = Path("data/docs")

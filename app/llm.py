@@ -6,6 +6,7 @@ modelo hay detrás.
 """
 
 import logging
+import re
 import time
 
 import numpy as np
@@ -23,10 +24,16 @@ logger = logging.getLogger(__name__)
 TASK_DOCUMENTO = "RETRIEVAL_DOCUMENT"
 TASK_PREGUNTA = "RETRIEVAL_QUERY"
 
-# El free tier de Gemini limita las requests por minuto. Embebemos de a lotes y reintentamos
-# con espera creciente si nos frena.
-TAMANIO_LOTE = 32
-REINTENTOS = 5
+# El free tier de Gemini permite 100 embeddings por minuto, y los cuenta por texto, no por
+# request HTTP: un lote de 32 textos gasta 32. Con ~106 chunks, un build completo se pasa del
+# límite sí o sí, así que hay que ir a ritmo en vez de mandar todo de una y comerse el 429.
+TAMANIO_LOTE = 25
+CUOTA_POR_MINUTO = 100
+REINTENTOS = 6
+
+# Margen de seguridad: apuntamos al 85% de la cuota, no al 100%. La ventana que mide Google no
+# arranca cuando arrancamos nosotros, así que ir al límite exacto garantiza chocarlo.
+PAUSA_ENTRE_LOTES = TAMANIO_LOTE / (CUOTA_POR_MINUTO * 0.85 / 60)
 
 
 _cliente: genai.Client | None = None
@@ -38,6 +45,44 @@ def get_cliente() -> genai.Client:
     if _cliente is None:
         _cliente = genai.Client(api_key=require_google_api_key())
     return _cliente
+
+
+def _espera_sugerida(error: ClientError, intento: int) -> float:
+    """Cuánto esperar tras un 429.
+
+    Google devuelve en el propio error cuántos segundos falta para que se libere la cuota
+    ("Please retry in 52.3s"). Ignorarlo y usar un backoff exponencial propio es lo que hacía
+    que los reintentos se agotaran antes de tiempo: esperábamos 30 segundos en total cuando la
+    API estaba pidiendo 52. Le hacemos caso a la API y usamos el exponencial solo como respaldo.
+    """
+    match = re.search(r"retry in ([\d.]+)s", str(error))
+    if match:
+        return float(match.group(1)) + 1.0  # un segundo de gracia
+    return float(2**intento)
+
+
+def _con_reintento(operacion, descripcion: str):
+    """Ejecuta una llamada a Gemini reintentando solo si es cuota agotada.
+
+    El free tier tiene cuota tanto de embeddings como de generación, así que las dos llamadas
+    necesitan lo mismo. Un 429 es transitorio y se arregla esperando; un 401 (key inválida) o
+    un 404 (modelo inexistente) no se arreglan reintentando y tienen que explotar en el acto,
+    con su mensaje original, en vez de quedar enmascarados detrás de seis reintentos inútiles.
+    """
+    for intento in range(1, REINTENTOS + 1):
+        try:
+            return operacion()
+        except ClientError as e:
+            if e.code != 429 or intento == REINTENTOS:
+                raise
+            espera = _espera_sugerida(e, intento)
+            logger.warning(
+                "Cuota agotada en %s (429). La API pide esperar %.0fs. Reintento %d/%d...",
+                descripcion, espera, intento, REINTENTOS,
+            )
+            time.sleep(espera)
+
+    raise RuntimeError(f"No se pudo completar {descripcion} tras {REINTENTOS} reintentos")
 
 
 def _normalizar(vectores: np.ndarray) -> np.ndarray:
@@ -69,34 +114,26 @@ def embed(textos: list[str], task_type: str) -> np.ndarray:
     cliente = get_cliente()
     vectores: list[list[float]] = []
 
-    for inicio in range(0, len(textos), TAMANIO_LOTE):
-        lote = textos[inicio : inicio + TAMANIO_LOTE]
+    lotes = [textos[i : i + TAMANIO_LOTE] for i in range(0, len(textos), TAMANIO_LOTE)]
 
-        for intento in range(1, REINTENTOS + 1):
-            try:
-                respuesta = cliente.models.embed_content(
-                    model=settings.embedding_model,
-                    contents=lote,
-                    config=types.EmbedContentConfig(
-                        task_type=task_type,
-                        output_dimensionality=settings.embedding_dim,
-                    ),
-                )
-                vectores.extend(e.values for e in respuesta.embeddings)
-                break
+    for numero_lote, lote in enumerate(lotes):
+        # Solo hace falta ir a ritmo cuando hay varios lotes (o sea, al indexar). Una pregunta
+        # suelta es un texto y no tiene por qué esperar nada.
+        if numero_lote > 0:
+            time.sleep(PAUSA_ENTRE_LOTES)
 
-            except ClientError as e:
-                # 429 = nos pasamos de la cuota por minuto del free tier. Es esperable al
-                # indexar y se resuelve esperando; cualquier otro error del cliente (401 por
-                # key inválida, 400 por request mal armada) no se arregla reintentando.
-                if e.code != 429 or intento == REINTENTOS:
-                    raise
-                espera = 2**intento
-                logger.warning(
-                    "Límite de cuota alcanzado (429). Reintento %d/%d en %ds...",
-                    intento, REINTENTOS, espera,
-                )
-                time.sleep(espera)
+        respuesta = _con_reintento(
+            lambda: cliente.models.embed_content(
+                model=settings.embedding_model,
+                contents=lote,
+                config=types.EmbedContentConfig(
+                    task_type=task_type,
+                    output_dimensionality=settings.embedding_dim,
+                ),
+            ),
+            descripcion=f"embeddings (lote {numero_lote + 1}/{len(lotes)})",
+        )
+        vectores.extend(e.values for e in respuesta.embeddings)
 
     matriz = np.array(vectores, dtype=np.float32)
     if matriz.shape[0] != len(textos):
@@ -126,13 +163,18 @@ def generar(prompt: str, system_prompt: str) -> str:
     queremos — es el camino más corto a que invente.
     """
     settings = get_settings()
-    respuesta = get_cliente().models.generate_content(
-        model=settings.gemini_model,
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            system_instruction=system_prompt,
-            temperature=0.0,
+    cliente = get_cliente()
+
+    respuesta = _con_reintento(
+        lambda: cliente.models.generate_content(
+            model=settings.gemini_model,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=system_prompt,
+                temperature=0.0,
+            ),
         ),
+        descripcion="generación de la respuesta",
     )
 
     texto = (respuesta.text or "").strip()

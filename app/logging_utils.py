@@ -24,16 +24,10 @@ logger = logging.getLogger(__name__)
 
 
 def registrar(respuesta: "Respuesta", ruta: Path | None = None) -> None:
-    """Agrega una línea al log de ejecuciones.
-
-    Que falle el logueo no puede tumbar la respuesta al usuario: si el disco está lleno o el
-    path es de solo lectura (pasa dentro de un contenedor), se deja constancia del problema y
-    se sigue. Lo que NO se hace es silenciar el error.
-    """
-    settings = get_settings()
-    ruta = ruta or settings.log_path
-
+    """Registra una consulta: qué se preguntó, qué contexto se usó y qué se respondió."""
     registro = {
+        "tipo": "consulta",
+        "id": respuesta.id,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "pregunta": respuesta.pregunta,
         "respuesta": respuesta.texto,
@@ -54,12 +48,46 @@ def registrar(respuesta: "Respuesta", ruta: Path | None = None) -> None:
         ],
     }
 
+    _escribir(registro, ruta)
+
+
+def registrar_feedback(consulta_id: str, positivo: bool, ruta: Path | None = None) -> None:
+    """Registra el 👍/👎 que el colaborador le dio a una respuesta.
+
+    Se agrega como una línea NUEVA en vez de modificar la línea de la consulta original. Es a
+    propósito: el log es append-only, así se puede escribir sin releer ni reescribir el
+    archivo, y no hay forma de corromper lo ya registrado. Para cruzarlo, se usa el
+    consulta_id.
+
+    El feedback negativo es la señal más valiosa que puede dar el sistema: marca las preguntas
+    donde el agente respondió mal o donde falta un documento en la base.
+    """
+    _escribir(
+        {
+            "tipo": "feedback",
+            "consulta_id": consulta_id,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "valor": "positivo" if positivo else "negativo",
+        },
+        ruta,
+    )
+
+
+def _escribir(registro: dict, ruta: Path | None = None) -> None:
+    """Agrega una línea al log.
+
+    Que falle el logueo no puede tumbar la respuesta al usuario: si el disco está lleno o el
+    path es de solo lectura (pasa dentro de un contenedor), se deja constancia del problema y
+    se sigue. Lo que NO se hace es silenciar el error.
+    """
+    ruta = ruta or get_settings().log_path
+
     try:
         ruta.parent.mkdir(parents=True, exist_ok=True)
         with ruta.open("a", encoding="utf-8") as f:
             f.write(json.dumps(registro, ensure_ascii=False) + "\n")
     except OSError as e:
-        logger.error("No se pudo escribir el log de ejecución en %s: %s", ruta, e)
+        logger.error("No se pudo escribir en el log de ejecución %s: %s", ruta, e)
 
 
 def leer(ruta: Path | None = None) -> list[dict]:

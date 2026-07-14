@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 
 from app.config import get_settings
 from app.llm import generar
+from app.logging_utils import registrar
 from app.retrieve import Recuperado, Recuperador, armar_contexto
 
 logger = logging.getLogger(__name__)
@@ -97,10 +98,22 @@ class Respuesta:
 class Agente:
     """Responde preguntas sobre los documentos internos, citando la fuente."""
 
-    def __init__(self, recuperador: Recuperador | None = None) -> None:
+    def __init__(self, recuperador: Recuperador | None = None, loguear: bool = True) -> None:
         self.recuperador = recuperador if recuperador is not None else Recuperador()
+        # Los tests apagan el logueo para no ensuciar el archivo real de ejecuciones.
+        self.loguear = loguear
 
     def responder(self, pregunta: str) -> Respuesta:
+        respuesta = self._responder(pregunta)
+
+        # Se loguea acá y no en cada interfaz: así la CLI, Streamlit y cualquier cosa que se
+        # agregue después quedan trazadas sin tener que acordarse de hacerlo.
+        if self.loguear:
+            registrar(respuesta)
+
+        return respuesta
+
+    def _responder(self, pregunta: str) -> Respuesta:
         settings = get_settings()
         arranque = time.perf_counter()
 
@@ -135,6 +148,8 @@ class Agente:
         return Respuesta(
             pregunta=pregunta,
             texto=texto,
+            # Si el modelo admitió no saber, los fragmentos recuperados no respaldan ninguna
+            # afirmación: mostrarlos como "fuentes" sería engañoso.
             fuentes=[] if admitio_no_saber else recuperados,
             latencia_ms=int((time.perf_counter() - arranque) * 1000),
             modelo=settings.gemini_model,

@@ -193,6 +193,42 @@ def partir_en_chunks(texto: str, tam: int, overlap: int) -> list[str]:
 # --------------------------------------------------------------------------------------
 
 
+# Un título numerado en su propia línea: "3. Licencia Anual Remunerada".
+# Exige el punto después del número, así "3 días por semana..." no se confunde con un título.
+PATRON_TITULO = re.compile(r"^\s*\d+\.\s+\S.*$")
+LARGO_MAX_TITULO = 80  # una línea larga es texto corrido, no un título
+
+
+def _partir_por_titulos(texto: str) -> list[tuple[str | None, str]]:
+    """Corta un texto en secciones, usando los títulos numerados como frontera.
+
+    Cortar solo por tamaño mezcla el final de una sección con el principio de la siguiente,
+    y eso arruina la búsqueda: si "22 días hábiles de licencia" cae en un chunk que habla
+    mayormente de home office, el embedding queda dominado por el home office y la pregunta
+    sobre licencias nunca lo recupera. El dato está indexado pero es inalcanzable.
+    """
+    secciones: list[tuple[str | None, str]] = []
+    titulo: str | None = None
+    cuerpo: list[str] = []
+
+    for linea in texto.splitlines():
+        limpia = linea.strip()
+        es_titulo = bool(PATRON_TITULO.match(linea)) and len(limpia) <= LARGO_MAX_TITULO
+
+        if es_titulo:
+            if cuerpo:
+                secciones.append((titulo, "\n".join(cuerpo).strip()))
+            titulo = limpia
+            cuerpo = [limpia]  # el título viaja dentro del chunk: le da contexto al embedding
+        else:
+            cuerpo.append(linea)
+
+    if cuerpo:
+        secciones.append((titulo, "\n".join(cuerpo).strip()))
+
+    return [(t, c) for t, c in secciones if c]
+
+
 def _cargar_pdf(ruta: Path, categoria: str, tam: int, overlap: int) -> list[Chunk]:
     lector = PdfReader(ruta)
     paginas = [pagina.extract_text() or "" for pagina in lector.pages]
@@ -201,17 +237,32 @@ def _cargar_pdf(ruta: Path, categoria: str, tam: int, overlap: int) -> list[Chun
         logger.info("%s: descartando %d línea(s) de encabezado/pie", ruta.name, len(repetidas))
 
     chunks: list[Chunk] = []
+    # Una sección puede seguir en la página siguiente. Arrastramos el último título visto
+    # para que ese texto no quede huérfano y se cite con la sección a la que pertenece.
+    titulo_vigente: str | None = None
+
     for numero, pagina in enumerate(paginas, start=1):
         texto = limpiar_texto(_quitar_lineas_repetidas(pagina, repetidas))
-        for fragmento in partir_en_chunks(texto, tam, overlap):
-            chunks.append(
-                Chunk(
-                    texto=fragmento,
-                    source_file=ruta.name,
-                    category=categoria,
-                    location=f"página {numero}",
+
+        for titulo, cuerpo in _partir_por_titulos(texto):
+            if titulo is None:
+                titulo = titulo_vigente  # viene de la página anterior (o es la portada)
+            else:
+                titulo_vigente = titulo
+
+            ubicacion = f"página {numero}"
+            if titulo:
+                ubicacion += f", sección «{titulo}»"
+
+            for fragmento in partir_en_chunks(cuerpo, tam, overlap):
+                chunks.append(
+                    Chunk(
+                        texto=fragmento,
+                        source_file=ruta.name,
+                        category=categoria,
+                        location=ubicacion,
+                    )
                 )
-            )
     return chunks
 
 

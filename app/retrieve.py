@@ -37,13 +37,21 @@ class Recuperador:
     def __init__(self, indice: IndiceVectorial | None = None) -> None:
         self.indice = indice if indice is not None else cargar_indice()
 
+    def categorias(self) -> list[str]:
+        """Las categorías de negocio presentes en el índice, para ofrecerlas como filtro."""
+        return sorted({c.category for c in self.indice.chunks})
+
     def buscar(
         self,
         pregunta: str,
         top_k: int | None = None,
         umbral: float | None = None,
+        categorias: list[str] | None = None,
     ) -> list[Recuperado]:
         """Devuelve los fragmentos más relevantes que superen el umbral de similitud.
+
+        `categorias` acota la búsqueda a ciertos dominios (RH, Financiero, etc.). Sirve cuando
+        el colaborador ya sabe de qué área es su duda y no quiere ruido de las otras.
 
         Devolver una lista vacía es un resultado válido y esperado: significa "la respuesta a
         esto no está en los documentos". Es exactamente lo que dispara el "no lo sé".
@@ -56,7 +64,17 @@ class Recuperador:
             raise ValueError("La pregunta está vacía")
 
         vector = embed_pregunta(pregunta)
-        candidatos = self.indice.buscar(vector, top_k)
+
+        if categorias:
+            # Se busca sobre TODO el índice y recién después se filtra. Al revés —filtrar el
+            # top-4 ya calculado— daría cero resultados cada vez que los 4 fragmentos más
+            # parecidos fueran de otra categoría, aunque la categoría pedida sí tuviera algo
+            # relevante. Sería un filtro que además rompe la búsqueda.
+            # Con ~100 chunks, recorrer el índice entero es instantáneo.
+            todos = self.indice.buscar(vector, len(self.indice))
+            candidatos = [(c, s) for c, s in todos if c.category in categorias][:top_k]
+        else:
+            candidatos = self.indice.buscar(vector, top_k)
 
         recuperados = [Recuperado(chunk, score) for chunk, score in candidatos if score >= umbral]
 

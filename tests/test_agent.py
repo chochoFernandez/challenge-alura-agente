@@ -26,9 +26,11 @@ class RecuperadorFalso:
     def __init__(self, resultados: list[Recuperado]) -> None:
         self.resultados = resultados
         self.llamadas = 0
+        self.categorias_recibidas: list[str] | None = None
 
-    def buscar(self, pregunta: str, top_k=None, umbral=None) -> list[Recuperado]:
+    def buscar(self, pregunta: str, top_k=None, umbral=None, categorias=None) -> list[Recuperado]:
         self.llamadas += 1
+        self.categorias_recibidas = categorias
         return self.resultados
 
 
@@ -123,6 +125,33 @@ class TestConContexto:
             respuesta = agente.responder("¿Cuántos días de licencia?")
 
         assert len(respuesta.citas) == 1
+
+
+class TestFiltroPorCategoria:
+    def test_el_filtro_llega_al_recuperador(self):
+        recuperador = RecuperadorFalso([Recuperado(chunk_de_prueba(), score=0.78)])
+        agente = Agente(recuperador, loguear=False)
+
+        with patch("app.agent.generar", return_value="Son 22 días."):
+            agente.responder("¿Cuántos días?", categorias=["Recursos Humanos"])
+
+        assert recuperador.categorias_recibidas == ["Recursos Humanos"]
+
+    def test_sin_filtro_no_se_acota_la_busqueda(self, agente_con_contexto):
+        with patch("app.agent.generar", return_value="Son 22 días."):
+            agente_con_contexto.responder("¿Cuántos días?")
+
+        assert agente_con_contexto.recuperador.categorias_recibidas is None
+
+
+class TestIdDeConsulta:
+    def test_cada_respuesta_tiene_un_id_unico(self, agente_sin_contexto):
+        # El id es lo que después enlaza el feedback 👍/👎 con la respuesta que lo motivó.
+        a = agente_sin_contexto.responder("¿Algo?")
+        b = agente_sin_contexto.responder("¿Otra cosa?")
+
+        assert a.id and b.id
+        assert a.id != b.id
 
 
 class TestValidaciones:

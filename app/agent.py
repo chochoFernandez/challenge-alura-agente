@@ -15,6 +15,7 @@ La capa dura es la que hace que la garantía sea una garantía y no una expectat
 
 import logging
 import time
+import uuid
 from dataclasses import dataclass, field
 
 from app.config import get_settings
@@ -84,6 +85,9 @@ class Respuesta:
     # False cuando el agente no pudo responder por falta de contexto. Permite medir después
     # qué porcentaje de preguntas queda sin cubrir, que es la señal de qué documento falta.
     respondida: bool = True
+    # Identifica esta consulta en el log. Es lo que después permite enganchar el feedback
+    # (👍/👎) con la respuesta concreta que lo motivó.
+    id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
 
     @property
     def citas(self) -> list[str]:
@@ -103,8 +107,8 @@ class Agente:
         # Los tests apagan el logueo para no ensuciar el archivo real de ejecuciones.
         self.loguear = loguear
 
-    def responder(self, pregunta: str) -> Respuesta:
-        respuesta = self._responder(pregunta)
+    def responder(self, pregunta: str, categorias: list[str] | None = None) -> Respuesta:
+        respuesta = self._responder(pregunta, categorias)
 
         # Se loguea acá y no en cada interfaz: así la CLI, Streamlit y cualquier cosa que se
         # agregue después quedan trazadas sin tener que acordarse de hacerlo.
@@ -113,14 +117,14 @@ class Agente:
 
         return respuesta
 
-    def _responder(self, pregunta: str) -> Respuesta:
+    def _responder(self, pregunta: str, categorias: list[str] | None = None) -> Respuesta:
         settings = get_settings()
         arranque = time.perf_counter()
 
         if not pregunta.strip():
             raise ValueError("La pregunta está vacía")
 
-        recuperados = self.recuperador.buscar(pregunta)
+        recuperados = self.recuperador.buscar(pregunta, categorias=categorias)
 
         # Capa dura: sin contexto relevante, no hay llamada al LLM. Un modelo al que no se le
         # pregunta nada no puede inventar nada.

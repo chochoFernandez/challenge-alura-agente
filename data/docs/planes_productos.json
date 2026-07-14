@@ -1,0 +1,83 @@
+{
+  "empresa": "NovaPay",
+  "documento": "Catálogo de planes y productos",
+  "vigencia_desde": "2025-01-01",
+  "moneda": "ARS",
+  "area_responsable": {
+    "nombre": "Gerencia Comercial",
+    "contacto": "comercial@novapay.example",
+    "responsable": "Lucía Ferraro"
+  },
+  "planes": [
+    {
+      "id": "basica",
+      "nombre": "Cuenta Básica",
+      "precio_mensual": 0,
+      "publico": "Personas físicas",
+      "limite_transferencia_diario": 500000,
+      "limite_transferencia_mensual": 3000000,
+      "extracciones_gratis_por_mes": 0,
+      "cashback": "0%",
+      "usuarios_incluidos": 1,
+      "soporte": "Chat en la app, respuesta en hasta 48 horas hábiles",
+      "beneficios": [
+        "Transferencias internas ilimitadas sin costo",
+        "Tarjeta virtual sin cargo"
+      ]
+    },
+    {
+      "id": "plus",
+      "nombre": "Cuenta Plus",
+      "precio_mensual": 4900,
+      "publico": "Personas físicas",
+      "limite_transferencia_diario": 2000000,
+      "limite_transferencia_mensual": 15000000,
+      "extracciones_gratis_por_mes": 3,
+      "cashback": "1% en gastronomía y transporte, tope ARS 15.000 por mes",
+      "usuarios_incluidos": 1,
+      "soporte": "Chat en la app, respuesta en hasta 12 horas hábiles",
+      "beneficios": [
+        "Tarjeta física sin cargo",
+        "3 extracciones bonificadas por mes",
+        "Descuentos en comercios adheridos"
+      ]
+    },
+    {
+      "id": "business",
+      "nombre": "Cuenta Business",
+      "precio_mensual": 12900,
+      "publico": "PyMEs y monotributistas",
+      "limite_transferencia_diario": 10000000,
+      "limite_transferencia_mensual": 100000000,
+      "extracciones_gratis_por_mes": 8,
+      "cashback": "0,5% sobre consumos con tarjeta corporativa",
+      "usuarios_incluidos": 5,
+      "soporte": "Ejecutivo de cuenta asignado, respuesta en hasta 4 horas hábiles",
+      "beneficios": [
+        "Cobros con QR",
+        "Hasta 5 usuarios con permisos diferenciados",
+        "Integración con facturación electrónica",
+        "Reportes contables exportables"
+      ]
+    },
+    {
+      "id": "enterprise",
+      "nombre": "Cuenta Enterprise",
+      "precio_mensual": null,
+      "precio_nota": "A medida, según volumen. Requiere cotización comercial.",
+      "publico": "Empresas con más de 50 empleados",
+      "limite_transferencia_diario": null,
+      "limite_transferencia_nota": "Sin límite preestablecido; se define por contrato.",
+      "extracciones_gratis_por_mes": 20,
+      "cashback": "Negociable por contrato",
+      "usuarios_incluidos": 50,
+      "soporte": "Ejecutivo dedicado y soporte telefónico 24/7",
+      "beneficios": [
+        "API de pagos",
+        "Conciliación automática",
+        "SLA de disponibilidad 99,9%",
+        "Onboarding asistido"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+concepto,categoria,monto,unidad,condiciones,vigencia_desde
+Transferencia interna entre cuentas NovaPay,Transferencias,0,ARS,Sin límite de operaciones,2025-01-01
+Transferencia a otro banco por CBU o CVU,Transferencias,0,ARS,"Primeras 5 por mes bonificadas; a partir de la sexta, ARS 150 por operación",2025-01-01
+Extracción en cajero automático de la red,Efectivo,850,ARS,Por operación. Plan Plus: 3 extracciones bonificadas por mes. Plan Business: 8 bonificadas,2025-01-01
+Extracción en cajero fuera de la red,Efectivo,1200,ARS,"Por operación, sin bonificaciones",2025-01-01
+Mantenimiento mensual de cuenta,Cuenta,0,ARS,Bonificado en todos los planes,2025-01-01
+Reposición de tarjeta física por pérdida o robo,Tarjetas,4500,ARS,Primera reposición del año bonificada en Plan Business y Enterprise,2025-01-01
+Consumo con tarjeta en el exterior,Tarjetas,3.5,% sobre el monto,Se aplica sobre el monto convertido a pesos,2025-01-01
+Adelanto de efectivo con tarjeta de crédito,Tarjetas,5.0,% sobre el monto,Mínimo ARS 2.000 por operación,2025-01-01
+Cobro con código QR (comercios),Comercios,0.8,% sobre la venta,Más IVA. Acreditación en 48 horas hábiles,2025-01-01
+Liquidación inmediata de ventas (comercios),Comercios,1.8,% sobre la venta,Más IVA. Acreditación en el acto,2025-01-01
+Gestión de contracargo o disputa,Disputas,0,ARS,Sin costo para el usuario,2025-01-01
+Rechazo de débito automático por saldo insuficiente,Cuenta,600,ARS,Por cada rechazo,2025-01-01
+Emisión de certificado de saldos y movimientos,Cuenta,0,ARS,Descarga inmediata desde la app,2025-01-01

@@ -260,12 +260,31 @@ TCP, puerto 8501) y en el firewall de la VM (`sudo iptables -I INPUT -p tcp --dp
 
 ---
 
+## Filtro por área
+
+La búsqueda se puede acotar a un dominio de negocio (RH, Financiero, Legal, Comercial,
+Operacional, Datos) desde el selector de la barra lateral. Los metadatos de categoría ya vienen
+en cada chunk desde la ingesta.
+
+Cuando hay filtro activo se busca sobre **todo** el índice y recién después se filtra. Hacerlo al
+revés —filtrar el top-4 ya calculado— devolvería cero resultados cada vez que los 4 fragmentos más
+parecidos fueran de otra categoría, aunque la categoría pedida sí tuviera algo relevante: sería un
+filtro que además rompe la búsqueda.
+
+Compone bien con el umbral: filtrar una pregunta financiera a "Recursos Humanos" devuelve cero
+fragmentos, y el agente dice "no lo sé" en vez de forzar una respuesta con documentos que no vienen
+al caso.
+
+---
+
 ## Registro de ejecución
 
 Cada consulta deja una línea en `logs/executions.jsonl` (formato JSON Lines):
 
 ```json
 {
+  "tipo": "consulta",
+  "id": "6ccb5671dadf",
   "timestamp": "2026-07-14T18:15:56.832228+00:00",
   "pregunta": "¿Cuántos días de vacaciones tengo?",
   "respuesta": "Tenés derecho a 22 días hábiles de licencia anual remunerada...",
@@ -290,6 +309,21 @@ agente respondió lo que respondió hay que poder ver qué fragmentos tuvo delan
 El campo `respondida` permite medir la tasa de preguntas sin cubrir, que es la señal de qué
 documento falta agregar a la base.
 
+### Feedback
+
+Cada respuesta tiene botones 👍/👎. El voto se guarda como una **línea nueva**, no modificando la
+línea de la consulta:
+
+```json
+{"tipo": "feedback", "consulta_id": "6ccb5671dadf", "valor": "negativo", "timestamp": "..."}
+```
+
+Es a propósito: el log queda *append-only*, se escribe sin releer ni reescribir el archivo, y no hay
+forma de corromper lo ya registrado. Se cruzan por el `id` de la consulta.
+
+El feedback negativo es la señal más valiosa del sistema: marca las preguntas donde el agente
+respondió mal o donde falta un documento en la base.
+
 Hay un ejemplo real en [`logs/executions.sample.jsonl`](logs/executions.sample.jsonl).
 
 ---
@@ -297,7 +331,7 @@ Hay un ejemplo real en [`logs/executions.sample.jsonl`](logs/executions.sample.j
 ## Tests
 
 ```bash
-pytest tests/ -q     # 29 tests, ~3 segundos
+pytest tests/ -q     # 32 tests, ~3 segundos
 ```
 
 Corren **sin API key y sin red**: el LLM y el retriever van mockeados. Un test que depende de la

@@ -226,37 +226,79 @@ variables sin valores reales.
 
 ## Deploy en OCI
 
-> 🚧 **Pendiente.** Esta sección se completa con la captura del agente corriendo en OCI.
+**Corriendo en:** `http://163.176.216.84:8501` — VM de OCI Compute, Ubuntu 22.04.
 
 ### Servicios de OCI utilizados
 
-- **OCI Compute** — VM Ampere A1 (ARM, free tier) corriendo el contenedor.
+- **OCI Compute** — VM `VM.Standard.E2.1.Micro` (AMD, Always Free) corriendo el contenedor Docker.
 
 ### Pasos
 
 ```bash
-# En la VM de OCI (Ubuntu 22.04, forma VM.Standard.A1.Flex)
+# En la VM de OCI
 sudo apt update && sudo apt install -y docker.io git
-sudo usermod -aG docker $USER && newgrp docker
+sudo systemctl enable --now docker
+sudo usermod -aG docker ubuntu
 
 git clone https://github.com/chochoFernandez/challenge-alura-agente.git
 cd challenge-alura-agente
+cp .env.example .env && nano .env    # completar GOOGLE_API_KEY, sin comillas
 
-docker build -t agente-novapay .
+sudo docker build -t agente-novapay .
 
-# La API key entra en RUNTIME, nunca en la imagen:
-docker run -d --name agente -p 8501:8501 \
-  -e GOOGLE_API_KEY="tu-key" \
+# La API key entra en RUNTIME (--env-file), nunca en la imagen:
+sudo docker run -d --name agente -p 8501:8501 \
+  --env-file .env \
   --restart unless-stopped \
   agente-novapay
 ```
 
-Después hay que abrir el puerto 8501 en la **Security List de la VCN** (Ingress rule: `0.0.0.0/0`,
-TCP, puerto 8501) y en el firewall de la VM (`sudo iptables -I INPUT -p tcp --dport 8501 -j ACCEPT`).
+### Obstáculos reales y cómo se resolvieron
+
+El deploy no salió a la primera. Documentado acá porque cada uno de estos es el tipo de cosa que
+te hace perder una tarde entera si no sabés qué mirar:
+
+1. **`VM.Standard.A1.Flex` (Ampere ARM) sin capacidad disponible.** Es el shape del free tier más
+   pedido y su cuota se agota seguido. La región `sa-saopaulo-1` además tiene un solo Availability
+   Domain, así que no había otro AD para probar. Se resolvió cambiando al shape
+   `VM.Standard.E2.1.Micro` (AMD, Always Free, sin ese cuello de botella). Con 1 GB de RAM alcanza
+   de sobra porque el trabajo pesado —LLM y embeddings— lo hace la API de Gemini, no la VM: acá
+   solo corre Streamlit y un índice FAISS de 359 KB.
+
+2. **Sin IP pública por defecto.** La subnet se creó como "pública" de nombre, pero sin Internet
+   Gateway real. Hubo que usar el quick action **"Connect public subnet to internet"** de la
+   consola (crea el Internet Gateway, un NSG y la ruta) y además asignar una **Ephemeral Public
+   IP** a mano en la VNIC — el quick action no lo hace por sí solo.
+
+3. **El firewall local (`iptables`) de la imagen Ubuntu de OCI solo dejaba pasar el puerto 22.**
+   Esto es independiente de cualquier configuración de red de OCI: es el firewall *dentro* de la
+   VM. Aunque la Security List y el NSG dejaran pasar el 8501, la propia VM lo rechazaba antes de
+   que llegara a Streamlit. Se agregó la regla y se persistió con `netfilter-persistent`, así
+   sobrevive a un reinicio:
+   ```bash
+   sudo iptables -I INPUT 1 -p tcp --dport 8501 -j ACCEPT
+   sudo netfilter-persistent save
+   ```
+
+4. **El Network Security Group creado por el quick action (`ig-quick-action-NSG`) tampoco traía
+   el puerto 8501 abierto** — solo lo básico para conectividad general. Se agregó una regla de
+   Ingress explícita (`0.0.0.0/0`, TCP, puerto 8501) en ese NSG.
+
+En resumen: **dos firewalls distintos e independientes** tienen que dejar pasar el mismo puerto
+—el de OCI (Security List / NSG) y el de la propia VM (`iptables`)— y ninguno de los dos alcanza
+sin el otro.
 
 ### Evidencia
 
-<!-- Acá va la captura del agente corriendo en la IP pública de OCI -->
+**Respuesta con fuentes citadas**, corriendo en la IP pública de OCI (nótese la URL en la barra del
+navegador):
+
+![Agente respondiendo con fuentes citadas, corriendo en OCI](docs/evidencia/deploy-oci-02-respuesta-con-fuentes.png)
+
+**Fallback funcionando en producción** — pregunta fuera de alcance, el agente admite que no sabe
+en vez de inventar:
+
+![Agente respondiendo "no encontré esta información", corriendo en OCI](docs/evidencia/deploy-oci-01-no-encontre.png)
 
 ---
 
